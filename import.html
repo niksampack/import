@@ -2,37 +2,41 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Bexio Data Import (Smart)</title>
+    <title>Bexio Data Import (Debug Mode)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
 </head>
-<body class="bg-gray-100 p-10">
+<body class="bg-gray-100 p-10 font-sans">
 
-    <div class="max-w-2xl mx-auto bg-white p-8 rounded-lg shadow-lg">
-        <h1 class="text-2xl font-bold mb-4 text-gray-700">Import Bexio Contacts</h1>
+    <div class="max-w-3xl mx-auto bg-white p-8 rounded-lg shadow-lg">
+        <h1 class="text-2xl font-bold mb-4 text-gray-700">Import Tool (Diagnose-Modus)</h1>
         
-        <div class="mb-6 p-4 bg-blue-50 border-l-4 border-blue-400 text-blue-700 text-sm">
-            <p class="font-bold">Info:</p>
-            <p>Das System erkennt automatisch getrennte Adressfelder (Strasse, Nr, PLZ, Stadt) und kombiniert sie.</p>
+        <div class="mb-6 p-4 border rounded bg-blue-50 border-blue-200">
+            <h3 class="font-bold text-blue-800 mb-2">Schritt 1: Verbindung testen</h3>
+            <p class="text-sm text-blue-600 mb-3">Klicken Sie hier, um zu prüfen, ob die Datenbank erreichbar ist.</p>
+            <button id="testBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                Verbindung Testen
+            </button>
+            <p id="testResult" class="mt-2 text-sm font-bold"></p>
         </div>
 
-        <input type="file" id="csvFile" accept=".csv" class="block w-full mb-4 text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"/>
+        <div class="mb-6 p-4 border rounded bg-gray-50 border-gray-200 opacity-50 pointer-events-none" id="step2">
+            <h3 class="font-bold text-gray-800 mb-2">Schritt 2: Datei hochladen</h3>
+            <input type="file" id="csvFile" accept=".csv" class="block w-full mb-4 text-sm text-gray-500"/>
+            <button id="uploadBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded">
+                Start Upload
+            </button>
+        </div>
 
-        <button id="uploadBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded disabled:opacity-50">
-            Start Upload
-        </button>
-
-        <div id="statusArea" class="mt-6 hidden">
-            <div class="w-full bg-gray-200 rounded-full h-2.5 mb-2">
-                <div id="progressBar" class="bg-indigo-600 h-2.5 rounded-full" style="width: 0%"></div>
-            </div>
-            <p id="statusText" class="text-center text-sm text-gray-600">Bereit...</p>
+        <div class="mt-6">
+            <label class="font-bold text-sm">Protokoll (Log):</label>
+            <textarea id="logArea" class="w-full h-48 p-2 border rounded bg-black text-green-400 font-mono text-xs" readonly>Warte auf Eingabe...</textarea>
         </div>
     </div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, writeBatch, doc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, writeBatch, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyCY9TmJwzoJRWFTAjhDFBD0eFMR4YKTHJQ",
@@ -46,61 +50,99 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
+        // Logger
+        function log(msg) {
+            const area = document.getElementById('logArea');
+            area.value += "\n> " + msg;
+            area.scrollTop = area.scrollHeight;
+        }
+
+        // 1. TEST CONNECTION
+        document.getElementById('testBtn').addEventListener('click', async () => {
+            log("Teste Verbindung zu Firebase...");
+            try {
+                await setDoc(doc(db, "bexio_contacts", "test_connection"), {
+                    name: "Test User",
+                    timestamp: new Date()
+                });
+                log("ERFOLG: Verbindung hergestellt! Datenbank ist bereit.");
+                document.getElementById('testResult').innerText = "✅ Verbindung OK!";
+                document.getElementById('testResult').className = "mt-2 text-sm font-bold text-green-600";
+                
+                // Unlock Step 2
+                document.getElementById('step2').classList.remove('opacity-50', 'pointer-events-none');
+            } catch (error) {
+                log("FEHLER: " + error.message);
+                document.getElementById('testResult').innerText = "❌ Fehler: " + error.message;
+                document.getElementById('testResult').className = "mt-2 text-sm font-bold text-red-600";
+                alert("Verbindungsfehler! Bitte prüfen Sie Ihre Firestore Rules.");
+            }
+        });
+
+        // 2. UPLOAD
         document.getElementById('uploadBtn').addEventListener('click', () => {
             const file = document.getElementById('csvFile').files[0];
             if (!file) return alert("Bitte CSV wählen.");
 
+            log("Lese Datei: " + file.name);
+            
             Papa.parse(file, {
                 header: true,
                 skipEmptyLines: true,
+                encoding: "UTF-8",
                 complete: async function(results) {
-                    await uploadToFirebase(results.data);
+                    if (results.data && results.data.length > 0) {
+                        log("Datei gelesen. Zeilen gefunden: " + results.data.length);
+                        log("Erste Zeile Vorschau: " + JSON.stringify(results.data[0]));
+                        await uploadToFirebase(results.data);
+                    } else {
+                        log("FEHLER: Keine Daten in der CSV gefunden oder falsches Format.");
+                    }
+                },
+                error: function(err) {
+                    log("CSV Parsing Fehler: " + err.message);
                 }
             });
         });
 
-        // Helper to find value regardless of case (e.g., "Strasse" or "strasse")
         function getValue(item, keys) {
             const lowerKeys = keys.map(k => k.toLowerCase());
             for (let key in item) {
-                if (lowerKeys.includes(key.toLowerCase())) {
-                    return item[key] ? item[key].trim() : "";
-                }
+                if (lowerKeys.includes(key.toLowerCase())) return item[key] ? item[key].trim() : "";
             }
             return "";
         }
 
         async function uploadToFirebase(data) {
-            const statusArea = document.getElementById('statusArea');
-            const statusText = document.getElementById('statusText');
-            statusArea.classList.remove('hidden');
-
+            log("Starte Upload...");
             let batch = writeBatch(db);
             let batchCount = 0;
             let total = data.length;
+            let successCount = 0;
 
             for (let i = 0; i < total; i++) {
                 const item = data[i];
-
-                // 1. Get Name & Phone & Restaurant
-                // Note: Bexio usually puts company name in "name_1" or "Name"
-                const name = getValue(item, ["name", "name_1", "firma", "company"]);
-                const restaurant = getValue(item, ["restaurant", "name_2"]); // Usually restaurant name is second line
-                const phone = getValue(item, ["phone", "telefon", "tel", "mobile"]);
-
-                // 2. Build Full Address Smartly
-                let fullAddress = getValue(item, ["address", "adresse"]); // If already combined
                 
+                // Get Fields
+                const name = getValue(item, ["name", "name_1", "firma", "company"]);
+                const restaurant = getValue(item, ["restaurant", "name_2"]);
+                const mobile = getValue(item, ["mobil", "mobile", "handy", "cell"]);
+                const landline = getValue(item, ["telefon", "tel", "phone", "festnetz", "office"]);
+                
+                // Combine Phone
+                let finalPhone = "";
+                if (mobile && landline) finalPhone = `${mobile} / ${landline}`;
+                else if (mobile) finalPhone = mobile;
+                else finalPhone = landline;
+
+                // Build Address
+                let fullAddress = getValue(item, ["address", "adresse"]);
                 if (!fullAddress || fullAddress.length < 5) {
-                    const street = getValue(item, ["strasse", "street", "address_street"]);
+                    const street = getValue(item, ["strasse", "street"]);
                     const num = getValue(item, ["nummer", "nr", "house_number"]);
-                    const zip = getValue(item, ["plz", "zip", "postal cod", "postal_code"]);
-                    const city = getValue(item, ["stadt", "ort", "city", "address_city"]);
-                    
-                    // Combine: "Bahnhofstrasse 10, 8000 Zürich"
-                    fullAddress = `${street} ${num}, ${zip} ${city}`.trim();
-                    // Cleanup trailing commas if data is missing
-                    if(fullAddress === ",") fullAddress = "";
+                    const zip = getValue(item, ["plz", "zip"]);
+                    const city = getValue(item, ["stadt", "ort", "city"]);
+                    if(street || city) fullAddress = `${street} ${num}, ${zip} ${city}`.trim();
                 }
 
                 if (!name) continue; // Skip empty rows
@@ -108,28 +150,28 @@
                 const docData = {
                     name: name,
                     restaurant: restaurant,
-                    address: fullAddress,
-                    phone: phone,
+                    address: fullAddress || "",
+                    phone: finalPhone || "",
                     source: "bexio"
                 };
 
                 const ref = doc(collection(db, "bexio_contacts"));
                 batch.set(ref, docData);
                 batchCount++;
+                successCount++;
 
                 if (batchCount >= 400) {
+                    log(`Speichere Stapel (${i}/${total})...`);
                     await batch.commit();
                     batch = writeBatch(db);
                     batchCount = 0;
-                    document.getElementById('progressBar').style.width = Math.round((i / total) * 100) + "%";
                 }
             }
 
             if (batchCount > 0) await batch.commit();
 
-            document.getElementById('progressBar').style.width = "100%";
-            statusText.innerText = "Fertig! Daten importiert.";
-            alert("✅ Import erfolgreich!");
+            log("FERTIG! " + successCount + " Einträge erfolgreich hochgeladen.");
+            alert("Erfolg! " + successCount + " Kontakte sind jetzt online.");
         }
     </script>
 </body>
