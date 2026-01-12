@@ -2,14 +2,14 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Bexio Data Import (Final Fix)</title>
+    <title>Bexio Data Import (Final 2.0)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
 </head>
 <body class="bg-gray-100 p-10 font-sans">
 
     <div class="max-w-3xl mx-auto bg-white p-8 rounded-lg shadow-lg">
-        <h1 class="text-2xl font-bold mb-4 text-gray-700">Import Tool (Smart Fix)</h1>
+        <h1 class="text-2xl font-bold mb-4 text-gray-700">Import Tool (Super Smart)</h1>
         
         <div class="mb-6 p-4 border rounded bg-blue-50 border-blue-200">
             <h3 class="font-bold text-blue-800 mb-2">Schritt 1: Verbindung</h3>
@@ -82,7 +82,7 @@
                 header: true,
                 skipEmptyLines: true,
                 encoding: "UTF-8",
-                delimiter: "", // Auto-detect delimiter (Important!)
+                delimiter: "", 
                 complete: async function(results) {
                     if (results.data && results.data.length > 0) {
                         const firstRow = results.data[0];
@@ -92,7 +92,7 @@
                         
                         await uploadToFirebase(results.data);
                     } else {
-                        log("❌ Datei scheint leer zu sein oder Format falsch.", "error");
+                        log("❌ Datei scheint leer zu sein.", "error");
                     }
                 },
                 error: (err) => log("CSV Fehler: " + err.message, "error")
@@ -117,11 +117,18 @@
             for (let i = 0; i < total; i++) {
                 const item = data[i];
                 
+                // --- UPDATE: Also look for 'restaurant' to use as Name ---
+                let name = getValue(item, ["name", "name_1", "firma", "company", "Name", "Firmenname", "Ansprechpartner"]);
+                
                 // Fields mapping
-                const name = getValue(item, ["name", "name_1", "firma", "company", "Name", "Firmenname"]);
                 const restaurant = getValue(item, ["restaurant", "name_2", "Zusatz"]);
                 const phone = getValue(item, ["mobil", "mobile", "telefon", "tel", "phone", "festnetz", "Telefon", "Mobil"]);
                 
+                // IF NAME IS EMPTY, USE RESTAURANT AS NAME
+                if (!name && restaurant) {
+                    name = restaurant;
+                }
+
                 // Address construction
                 let fullAddress = getValue(item, ["address", "adresse", "Adresse"]);
                 if (!fullAddress || fullAddress.length < 5) {
@@ -132,7 +139,7 @@
                     if(street || city) fullAddress = `${street} ${num}, ${zip} ${city}`.trim();
                 }
 
-                if (!name) continue; // Skip if no name
+                if (!name) continue; // Skip only if BOTH name and restaurant are missing
 
                 const docData = {
                     name: name,
@@ -157,14 +164,8 @@
 
             if (batchCount > 0) await batch.commit();
 
-            if (successCount === 0) {
-                log("⚠️ ACHTUNG: 0 Kontakte gespeichert!", "error");
-                log("Grund: Das Programm hat die Spalten 'name' oder 'firma' nicht gefunden.", "error");
-                log("Bitte prüfen Sie die Spaltennamen oben im Protokoll.", "error");
-            } else {
-                log(`✅ FERTIG! ${successCount} Kontakte erfolgreich importiert.`, "green");
-                log("Sie können das Fenster jetzt schließen und die App neu laden.");
-            }
+            log(`✅ FERTIG! ${successCount} Kontakte erfolgreich importiert.`, "green");
+            log("Sie können das Fenster jetzt schließen und die App neu laden.");
         }
     </script>
 </body>
