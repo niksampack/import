@@ -2,164 +2,89 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Import Tool (Smart Version)</title>
+    <title>🔍 Excel Inspector (Debug Mode)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
-<body class="bg-gray-100 p-10 font-sans">
+<body class="bg-gray-800 text-white p-10 font-mono">
 
-    <div class="max-w-3xl mx-auto bg-white p-8 rounded-lg shadow-lg">
-        <h1 class="text-2xl font-bold mb-4 text-gray-800">📦 Produkte Importieren (Smart Fix)</h1>
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold mb-4 text-yellow-400">🔍 ابزار عیب‌یابی فایل اکسل</h1>
+        <p class="mb-4">ما می‌خواهیم ببینیم کامپیوتر چه ستون‌هایی را می‌بیند.</p>
+
+        <input type="file" id="fileInput" class="block w-full mb-4 p-4 bg-gray-700 rounded" onchange="inspectFile()">
         
-        <div class="mb-6 p-8 border-2 border-dashed border-indigo-300 rounded-lg bg-indigo-50 text-center cursor-pointer hover:bg-indigo-100 transition" onclick="document.getElementById('fileInput').click()">
-            <span class="text-4xl">📂</span>
-            <p class="mt-2 font-bold text-indigo-700">Excel-Datei hier auswählen (.xlsx)</p>
-            <input type="file" id="fileInput" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleFileSelect()">
-        </div>
-
-        <button id="uploadBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded shadow-md disabled:opacity-50 transition" onclick="processFile()" disabled>
-            Start Import
-        </button>
-
-        <div class="mt-6">
-            <div id="status" class="font-bold text-gray-600 mb-2">Warte auf Datei...</div>
-            <div id="logArea" class="w-full h-64 p-4 border rounded bg-gray-900 text-green-400 font-mono text-xs overflow-y-auto"></div>
+        <div class="mt-4">
+            <h3 class="text-xl font-bold text-blue-400">نتایج آنالیز:</h3>
+            <pre id="output" class="bg-black p-4 rounded border border-gray-600 overflow-auto h-96 text-xs text-green-400"></pre>
         </div>
     </div>
 
-    <script type="module">
-        // --------------------------------------------------------------
-        // 🔴 کد فایربیس (همان کد قبلی شماست)
-        // --------------------------------------------------------------
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, doc, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyCY9TmJwzoJRWFTAjhDFBD0eFMR4YKTHJQ",
-            authDomain: "listapp-96713.firebaseapp.com",
-            projectId: "listapp-96713",
-            storageBucket: "listapp-96713.firebasestorage.app",
-            messagingSenderId: "1044312662356",
-            appId: "1:1044312662356:web:64fd48530c4238127828c1"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-
-        // --------------------------------------------------------------
-        // 🧠 هوش مصنوعی برای پیدا کردن ستون‌ها
-        // --------------------------------------------------------------
-        
-        // این تابع می‌گردد ببیند کدام اسم ستون در فایل شما وجود دارد
-        function findValue(row, possibleNames) {
-            // تبدیل تمام کلیدهای فایل اکسل به حروف کوچک برای مقایسه
-            const rowKeys = Object.keys(row).map(k => k.toLowerCase().trim());
-            const rowEntries = Object.entries(row);
-
-            for (let name of possibleNames) {
-                const search = name.toLowerCase();
-                // پیدا کردن مقدار واقعی
-                const foundEntry = rowEntries.find(([key, val]) => key.toLowerCase().trim() === search);
-                if (foundEntry) return foundEntry[1];
-            }
-            return null;
+    <script>
+        function log(msg) {
+            document.getElementById('output').innerHTML += msg + "\n";
         }
 
-        window.handleFileSelect = function() {
-            const input = document.getElementById('fileInput');
-            const btn = document.getElementById('uploadBtn');
-            if (input.files.length > 0) {
-                btn.disabled = false;
-                document.getElementById('status').innerText = "✅ Datei bereit: " + input.files[0].name;
-            }
-        }
-
-        function log(msg, color="text-green-400") {
-            const area = document.getElementById('logArea');
-            area.innerHTML += `<div class="${color} border-b border-gray-800 py-1">> ${msg}</div>`;
-            area.scrollTop = area.scrollHeight;
-        }
-
-        window.processFile = async function() {
+        function inspectFile() {
             const fileInput = document.getElementById('fileInput');
-            const btn = document.getElementById('uploadBtn');
-            const status = document.getElementById('status');
-            
-            btn.disabled = true;
-            status.innerText = "⏳ Analysiere Excel-Datei...";
-            
+            const output = document.getElementById('output');
+            output.innerHTML = "⏳ در حال خواندن فایل...\n";
+
+            if (!fileInput.files.length) return;
+
             const file = fileInput.files[0];
             const reader = new FileReader();
 
-            reader.onload = async function(e) {
+            reader.onload = function(e) {
                 try {
                     const data = new Uint8Array(e.target.result);
                     const workbook = XLSX.read(data, { type: 'array' });
+                    
+                    log("✅ فایل خوانده شد.");
+                    log(`📂 نام شیت‌ها: ${workbook.SheetNames.join(", ")}`);
+
                     const firstSheetName = workbook.SheetNames[0];
-                    const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheetName]);
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    
+                    // تبدیل شیت به JSON
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }); // حالت آرایه‌ای (خام)
 
-                    if (jsonData.length === 0) throw new Error("Datei ist leer!");
-
-                    // 🔍 چاپ نام ستون‌های پیدا شده برای دیباگ
-                    const foundColumns = Object.keys(jsonData[0]);
-                    log(`Gefundene Spalten: [ ${foundColumns.join(' | ')} ]`, "text-yellow-300");
-
-                    let batch = writeBatch(db);
-                    let count = 0;
-                    let successCount = 0;
-
-                    for (const row of jsonData) {
-                        // لیست تمام حالت‌های ممکن برای نام ستون‌ها (آلمانی و انگلیسی)
-                        const code = findValue(row, ['Produktcode', 'Code', 'Nr', 'Artikelnummer', 'Nummer', 'ID', 'No']);
-                        const name = findValue(row, ['Produktname', 'Name', 'Bezeichnung', 'Beschreibung', 'Artikelname', 'Text']);
-                        const cat = findValue(row, ['Hauptgruppe', 'Kategorie', 'Gruppe', 'Warengruppe', 'Category']);
-                        const price = findValue(row, ['Verkaufspreis', 'Preis', 'Price', 'VP', 'Betrag']);
-                        const unit = findValue(row, ['Einheit', 'Unit', 'Menge', 'Basis']);
-
-                        if (!code) continue; // اگر کد پیدا نشد، رد شو
-
-                        const productData = {
-                            code: String(code).trim(),
-                            name: name || 'Unbekannt',
-                            category: cat || 'General',
-                            unit: unit || 'Stk',
-                            price: Number(price) || 0,
-                            updatedAt: new Date()
-                        };
-
-                        const docRef = doc(db, "products", String(code).trim());
-                        batch.set(docRef, productData);
-
-                        count++;
-                        successCount++;
-                        log(`+ ${productData.name} (${productData.category})`);
-
-                        if (count >= 400) {
-                            await batch.commit();
-                            batch = writeBatch(db);
-                            count = 0;
-                            log(`--- Zwischenspeichern... ---`, "text-blue-300");
-                        }
+                    if (jsonData.length === 0) {
+                        log("❌ فایل خالی است!");
+                        return;
                     }
 
-                    if (count > 0) await batch.commit();
+                    log("--------------------------------------------------");
+                    log(`📊 ردیف اول (احتمالاً تیترها):`);
+                    log(JSON.stringify(jsonData[0], null, 2)); // نمایش ردیف اول
+                    
+                    log("--------------------------------------------------");
+                    log(`📦 ردیف دوم (اولین محصول):`);
+                    if (jsonData.length > 1) {
+                        log(JSON.stringify(jsonData[1], null, 2));
+                    } else {
+                        log("❌ ردیف دوم وجود ندارد.");
+                    }
 
-                    status.innerText = "🎉 Import Fertig!";
-                    status.classList.add("text-green-600");
-                    alert(`Erfolg! ${successCount} Produkte importiert.`);
-                    log(`✅ ${successCount} Produkte erfolgreich gespeichert.`, "text-green-200 font-bold");
+                    log("--------------------------------------------------");
+                    log("💡 تحلیل:");
+                    const headers = jsonData[0];
+                    const likelyCodeIndex = headers.findIndex(h => h && String(h).toLowerCase().includes("code") || String(h).toLowerCase().includes("nr"));
+                    
+                    if (likelyCodeIndex > -1) {
+                        log(`✅ ستون کد پیدا شد در ایندکس: ${likelyCodeIndex} (نام: ${headers[likelyCodeIndex]})`);
+                    } else {
+                        log("❌ هیچ ستونی شبیه به 'Code' یا 'Nr' در ردیف اول پیدا نشد.");
+                        log("⚠️ شاید تیترها در ردیف ۱ نیستند؟");
+                    }
 
-                } catch (error) {
-                    console.error(error);
-                    status.innerText = "❌ Fehler";
-                    log(`FEHLER: ${error.message}`, "text-red-500");
-                    alert("خطا: لطفاً مطمئن شوید فایل اکسل درست است.");
-                    btn.disabled = false;
+                } catch (err) {
+                    log("❌ خطا: " + err.message);
                 }
             };
+
             reader.readAsArrayBuffer(file);
-        };
+        }
     </script>
 </body>
 </html>
